@@ -1,0 +1,325 @@
+name: Build Eclipse Kernel + SusFS + DroidSpaces + NoMount (stone)
+
+on:
+  workflow_dispatch:
+  # Auto-rebuild weekly (uncomment to track upstream):
+  # schedule:
+  #   - cron: "0 4 * * 1"
+
+env:
+  KERNEL_REPO: https://github.com/bittencourtjulival/eclipse_kernel_xiaomi_stone.git
+  KERNEL_BRANCH: seventeen
+  DEFCONFIG: stone_defconfig
+  # susfs v2.x patch for kernel 5.4 (JackA1ltman, auto-patches all needed files)
+  SUSFS_PATCH: https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch
+  # ReSukiSU driver injector (no args = latest tagged release)
+  KSU_SETUP: https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh
+  # DroidSpaces-OSS (ravindu644) - containers/VMs. 5.4 = GKI category -> kABI patches MANDATORY
+  DS_KABI_SYSVIPC: https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch
+  DS_CGROUP_FIX: https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/non-GKI/02.fix_restore%20cgroup%20file%20prefix%20handling%20.patch
+  DS_QTAGUID_FIX: https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/non-GKI/01.fix_kernel_panic_in_xt_qtaguid.patch
+  # NoMount (maxsteeel) - mount-free VFS redirection, pairs with susfs for root hiding
+  NOMOUNT_SETUP: https://raw.githubusercontent.com/maxsteeel/nomount/dev/kernel/setup.sh
+  AK3_REPO: https://github.com/skglab-dev/AnyKernel3.git
+  AK3_BRANCH: stone
+  # clang proven on SM6375 5.4 (same as veux template); swap for newer if needed
+  CLANG_URL: https://codeload.github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/tar.gz/refs/heads/lineage-20.0
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cleanup runner disk
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
+          sudo docker image prune --all --force > /dev/null 2>&1 || true
+          df -h /
+
+      - name: Add swap (link stage safety)
+        run: |
+          sudo swapoff -a || true
+          sudo fallocate -l 8G /mnt/swapfile
+          sudo chmod 600 /mnt/swapfile
+          sudo mkswap /mnt/swapfile
+          sudo swapon /mnt/swapfile
+
+      - name: Install deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib \
+            gcc-multilib git gnupg gperf lib32ncurses-dev lib32z1-dev libssl-dev \
+            libxml2 libxml-sax-base-perl libxml-simple-perl lzop unzip xsltproc zip zlib1g-dev
+
+      - name: Get toolchains
+        run: |
+          mkdir -p tc && cd tc
+          curl -sL "$CLANG_URL" | tar -xz
+          mv android_prebuilts_clang_kernel_linux-x86_clang-r416183b-* clang
+          git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
+          git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
+
+      - name: Clone kernel source
+        run: git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel
+
+      - name: Inject ReSukiSU driver
+        run: |
+          cd kernel
+          curl -sSL "$KSU_SETUP" | bash -s --
+
+      - name: Apply susfs patch (v2.x for 5.4)
+        run: |
+          cd kernel
+          curl -sL "$SUSFS_PATCH" -o susfs.patch
+          patch -p1 --forward < susfs.patch || true
+          echo "[+] susfs patch applied (2 known rejects on Eclipse tree get fixed next)"
+
+      - name: Fix susfs rejects (Eclipse-specific merges, tested vs seventeen@5.4.303)
+        run: |
+          cd kernel
+          python3 - << 'PYEOF'
+          import sys
+          # Eclipse carries its own uname spoof (FAKE_UNAME/netmgrd) and an fdinfo
+          # seq_printf that already prints "ino", so exactly two upstream susfs
+          # hunks reject on this tree. Apply the equivalent changes here.
+          # Everything is anchored on exact strings + verified, so if upstream
+          # drifts, this fails LOUDLY instead of producing a broken kernel.
+
+          # --- kernel/sys.c: SPOOF_UNAME hook into Eclipse's newuname ---
+          p = 'kernel/sys.c'
+          s = open(p).read()
+          if 'susfs_spoof_uname' in s:
+              print('[-] sys.c already merged')
+          else:
+              a = 'SYSCALL_DEFINE1(newuname, struct new_utsname __user *, name)\n{\n\tstruct new_utsname tmp;\n\tstruct task_struct *t;'
+              if a not in s: sys.exit('FAIL sys.c anchor 1 (upstream drifted - inspect manually)')
+              s = s.replace(a,
+                '#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\nextern struct static_key_false susfs_is_uname_spoof_buffer_set;\nextern void susfs_spoof_uname(struct new_utsname* tmp);\n#endif\n' + a, 1)
+              a2 = "\tdown_read(&uts_sem);\n\tmemcpy(&tmp, utsname(), sizeof(tmp));\n#ifndef CONFIG_FAKE_UNAME_NONE"
+              if a2 not in s: sys.exit('FAIL sys.c anchor 2 (upstream drifted - inspect manually)')
+              s = s.replace(a2,
+                "\tdown_read(&uts_sem);\n\tmemcpy(&tmp, utsname(), sizeof(tmp));\n#ifdef CONFIG_KSU_SUSFS_SPOOF_UNAME\n\tif (static_branch_likely(&susfs_is_uname_spoof_buffer_set))\n\t\tsusfs_spoof_uname(&tmp);\n#endif\n#ifndef CONFIG_FAKE_UNAME_NONE", 1)
+              open(p, 'w').write(s)
+              print('[+] sys.c susfs uname hook merged')
+
+          # --- fs/proc/fd.c: sus-mount / open-redirect fdinfo (keeps Eclipse ino field) ---
+          p = 'fs/proc/fd.c'
+          s = open(p).read()
+          if 'orig_flow:' in s and 'susfs_get_non_sus_mnt_id_from_mnt' in s:
+              print('[-] fd.c already merged')
+          else:
+              a3 = '\tseq_printf(m, "pos:\\t%lli\\nflags:\\t0%o\\nmnt_id:\\t%i\\nino:\\t%lu\\n",\n\t\t   (long long)file->f_pos, f_flags,\n\t\t   real_mount(file->f_path.mnt)->mnt_id,\n\t\t   file_inode(file)->i_ino);\n'
+              if a3 not in s: sys.exit('FAIL fd.c anchor (upstream drifted - inspect manually)')
+              repl = (
+                '#ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n'
+                '\tmnt = real_mount(file->f_path.mnt);\n'
+                '\tif (mnt->mnt_id >= DEFAULT_KSU_MNT_ID &&\n'
+                '\t\tlikely(susfs_is_current_proc_umounted()))\n'
+                '\t{\n'
+                '\t\tstruct path path;\n'
+                '\t\tchar *pathname = kmalloc(PAGE_SIZE, GFP_KERNEL);\n'
+                '\t\tchar *dpath;\n'
+                '\n'
+                '\t\tif (!pathname) {\n'
+                '\t\t\tgoto orig_flow;\n'
+                '\t\t}\n'
+                '\t\tdpath = d_path(&file->f_path, pathname, PAGE_SIZE);\n'
+                '\t\tif (!dpath) {\n'
+                '\t\t\tgoto out_kfree;\n'
+                '\t\t}\n'
+                '\t\tif (kern_path(dpath, 0, &path)) {\n'
+                '\t\t\tgoto out_kfree;\n'
+                '\t\t}\n'
+                '\t\tif (!path.dentry->d_inode) {\n'
+                '\t\t\tgoto out_path_put;\n'
+                '\t\t}\n'
+                '\n'
+                '\t\tseq_printf(m, "pos:\\t%lli\\nflags:\\t0%o\\nmnt_id:\\t%i\\nino:\\t%lu\\n",\n'
+                '\t\t\t\t(long long)file->f_pos, f_flags,\n'
+                '\t\t\t\tsusfs_get_non_sus_mnt_id_from_mnt(mnt),\n'
+                '\t\t\t\tpath.dentry->d_inode->i_ino);\n'
+                '\t\tpath_put(&path);\n'
+                '\t\tkfree(pathname);\n'
+                '\t\tgoto bypass_orig_flow;\n'
+                '\tout_path_put:\n'
+                '\t\tpath_put(&path);\n'
+                '\tout_kfree:\n'
+                '\t\tkfree(pathname);\n'
+                '\t\tgoto orig_flow;\n'
+                '\t}\n'
+                '#endif // #ifdef CONFIG_KSU_SUSFS_SUS_MOUNT\n'
+                '\n'
+                '#ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n'
+                '\tif (SUSFS_IS_INODE_OPEN_REDIRECT(file_inode(file))) {\n'
+                '\t\tif (susfs_open_redirect_spoof_seq_show(file_inode(file), &mnt_id, &ino))\n'
+                '\t\t\tgoto orig_flow;\n'
+                '\t\tseq_printf(m, "pos:\\t%lli\\nflags:\\t0%o\\nmnt_id:\\t%i\\nino:\\t%lu\\n",\n'
+                '\t\t\t\t(long long)file->f_pos, f_flags,\n'
+                '\t\t\t\tmnt_id,\n'
+                '\t\t\t\tino);\n'
+                '\t\tgoto bypass_orig_flow;\n'
+                '\t}\n'
+                '#endif // #ifdef CONFIG_KSU_SUSFS_OPEN_REDIRECT\n'
+                '\n'
+                '#if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n'
+                'orig_flow:\n'
+                + a3 +
+                'bypass_orig_flow:\n'
+                '#else\n'
+                + a3 +
+                '#endif // #if defined(CONFIG_KSU_SUSFS_SUS_MOUNT) || defined(CONFIG_KSU_SUSFS_OPEN_REDIRECT)\n'
+              )
+              s = s.replace(a3, repl, 1)
+              open(p, 'w').write(s)
+              print('[+] fd.c sus mount/open-redirect fdinfo merged')
+
+          # --- cleanup the two known rejects ---
+          import os
+          for r in ('kernel/sys.c.rej', 'fs/proc/fd.c.rej'):
+              if os.path.exists(r):
+                  os.remove(r)
+                  print('[+] removed', r)
+          PYEOF
+          REJ=$(find . -name "*.rej" | wc -l)
+          if [ "$REJ" -gt 0 ]; then
+            echo "UNEXPECTED rejects remain:"
+            find . -name "*.rej" -exec sh -c 'echo "===== $1"; cat "$1"' _ {} \;
+            exit 1
+          fi
+          find . -name "*.orig" -delete
+          echo "[+] susfs fully merged, zero rejects"
+
+      - name: Apply DroidSpaces kABI patches (5.4 = GKI rules)
+        run: |
+          cd kernel
+          # 1) SYSVIPC kABI fix (moves sysvsem/sysvshm into ANDROID_KABI slots 6/7/8)
+          curl -sL "$DS_KABI_SYSVIPC" -o ds1.patch
+          patch -p1 --forward < ds1.patch || true
+          # 2) POSIX_MQUEUE kABI fix - upstream patch expects ANDROID_OEM_DATA_ARRAY
+          #    which this tree lacks in user.h, so apply the equivalent inline
+          python3 - << 'PYEOF'
+          import sys
+          p = 'include/linux/sched/user.h'
+          s = open(p).read()
+          if 'ANDROID_KABI_USE(1, unsigned long mq_bytes)' in s:
+              print('[-] user.h already merged')
+          else:
+              a = "\tunsigned long mq_bytes;\t/* How many bytes can be allocated to mqueue? */"
+              b = "\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};"
+              if a not in s: sys.exit('FAIL user.h anchor 1 (upstream drifted)')
+              if b not in s: sys.exit('FAIL user.h anchor 2 (upstream drifted)')
+              s = s.replace(a, "\t/* mq_bytes moved to ANDROID_KABI_USE slot 1 below (kABI-safe) */")
+              s = s.replace(b, "#if defined(CONFIG_POSIX_MQUEUE)\n\tANDROID_KABI_USE(1, unsigned long mq_bytes);\n\tANDROID_KABI_RESERVE(2);\n#else\n\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n#endif\n};")
+              open(p, 'w').write(s)
+              print('[+] user.h mqueue kABI adaptation applied')
+          PYEOF
+          # 3) cgroup file-prefix fix (only if not already handled)
+          if [ -f kernel/cgroup/cgroup.c ] && ! grep -q "kernfs_create_link" kernel/cgroup/cgroup.c; then
+            curl -sL "$DS_CGROUP_FIX" -o ds2.patch
+            patch -p1 --forward < ds2.patch || true
+            echo "[+] cgroup.c prefix fix applied"
+          else
+            echo "[-] cgroup.c already fine, skipped"
+          fi
+          # 4) xt_qtaguid panic fix (only if the file exists; absent on Eclipse)
+          if [ -f net/netfilter/xt_qtaguid.c ]; then
+            curl -sL "$DS_QTAGUID_FIX" -o ds3.patch
+            patch -p1 --forward < ds3.patch || true
+            echo "[+] xt_qtaguid fix applied"
+          else
+            echo "[-] no xt_qtaguid.c, skipped"
+          fi
+          REJ=$(find . -name "*.rej" | wc -l)
+          if [ "$REJ" -gt 0 ]; then
+            echo "DroidSpaces patch .rej files:"
+            find . -name "*.rej" -exec sh -c 'echo "===== $1"; cat "$1"' _ {} \;
+            exit 1
+          fi
+          find . -name "*.orig" -delete
+          echo "[+] DroidSpaces patches clean"
+
+      - name: Integrate NoMount (VFS redirection, no real mounts)
+        run: |
+          cd kernel
+          curl -sSL "$NOMOUNT_SETUP" | bash -
+          test -e fs/nomount/Kconfig || { echo "NoMount integration failed"; exit 1; }
+          echo "[+] NoMount wired into fs/ tree"
+
+      - name: Enable KSU + susfs + DroidSpaces + NoMount configs
+        run: |
+          cd kernel
+          cat >> arch/arm64/configs/$DEFCONFIG << 'CFG'
+          CONFIG_LOCALVERSION="-Eclipse-SusFS"
+          CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_HOOKS=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          CONFIG_KSU_SUSFS_SUS_MAP=y
+          CONFIG_NOMOUNT=y
+          # --- DroidSpaces (containers/VMs) - kABI-safe list per ravindu644 ---
+          CONFIG_SYSVIPC=y
+          CONFIG_POSIX_MQUEUE=y
+          CONFIG_IPC_NS=y
+          CONFIG_PID_NS=y
+          CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+          CONFIG_USER_NS=y
+          CONFIG_NETFILTER_XT_TARGET_REJECT=y
+          CONFIG_NETFILTER_XT_TARGET_LOG=y
+          CONFIG_NETFILTER_XT_MATCH_RECENT=y
+          CONFIG_IP_SET=y
+          CONFIG_IP_SET_HASH_IP=y
+          CONFIG_IP_SET_HASH_NET=y
+          CONFIG_NETFILTER_XT_SET=y
+          CONFIG_TMPFS_POSIX_ACL=y
+          CONFIG_TMPFS_XATTR=y
+          # --- container networking (NAT/bridge modes) ---
+          CONFIG_NET_NS=y
+          CONFIG_VETH=y
+          CONFIG_BRIDGE=y
+          CONFIG_BRIDGE_NETFILTER=y
+          CONFIG_NF_NAT=y
+          CONFIG_IP_NF_NAT=y
+          CONFIG_IP_NF_TARGET_MASQUERADE=y
+          CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+          CFG
+          # sus_su/syscall-hook mode instead of manual hooks? replace the
+          # MANUAL_HOOKS line above with: CONFIG_KSU_SUSFS_SUS_SU=y
+          grep -q "THREAD_INFO_IN_TASK" drivers/kernelsu/Kconfig 2>/dev/null && \
+            echo "CONFIG_THREAD_INFO_IN_TASK=y" >> arch/arm64/configs/$DEFCONFIG || true
+
+      - name: Build
+        run: |
+          cd kernel
+          make O=out ARCH=arm64 $DEFCONFIG
+          PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
+          make -j$(nproc --all) O=out ARCH=arm64 \
+            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+            CROSS_COMPILE=aarch64-linux-android- \
+            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+            LD=ld.lld
+          if [ ! -f out/arch/arm64/boot/Image.gz ]; then
+            gzip -c out/arch/arm64/boot/Image > out/arch/arm64/boot/Image.gz
+          fi
+          ls -la out/arch/arm64/boot/Image.gz
+
+      - name: Package AnyKernel3 zip
+        run: |
+          git clone --depth=1 -b $AK3_BRANCH $AK3_REPO ak3
+          rm -rf ak3/.git ak3/.github
+          cp kernel/out/arch/arm64/boot/Image.gz ak3/
+          cd ak3
+          zip -r9 "../Eclipse-SusFS-DS-stone-$(date +%Y%m%d).zip" . -x ".git*" "README*" "*.md"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Eclipse-SusFS-DS-NM-stone-${{ github.run_number }}
+          path: |
+            Eclipse-SusFS-DS-stone-*.zip
+            kernel/out/arch/arm64/boot/Image.gz
