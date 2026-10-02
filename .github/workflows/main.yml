@@ -23,7 +23,8 @@ env:
   AK3_REPO: https://github.com/skglab-dev/AnyKernel3.git
   AK3_BRANCH: stone
   # clang proven on SM6375 5.4 (same as veux template); swap for newer if needed
-  CLANG_URL: https://codeload.github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/tar.gz/refs/heads/lineage-20.0
+  # CLANG_URL: https://codeload.github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/tar.gz/refs/heads/lineage-20.0
+  CLANG_URL: https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r596125-15682573/clang-r596125.tar.gz
 
 jobs:
   build:
