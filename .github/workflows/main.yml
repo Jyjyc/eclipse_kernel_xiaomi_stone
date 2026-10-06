@@ -7,8 +7,8 @@ on:
   #   - cron: "0 4 * * 1"
 
 env:
-  KERNEL_REPO: https://github.com/bittencourtjulival/eclipse_kernel_xiaomi_stone.git
-  KERNEL_BRANCH: seventeen
+  KERNEL_REPO: https://github.com/Jyjyc/eclipse_kernel_xiaomi_stone.git
+  KERNEL_BRANCH: seventeen_mod
   DEFCONFIG: stone_defconfig
   # susfs v2.x patch for kernel 5.4 (JackA1ltman, auto-patches all needed files)
   SUSFS_PATCH: https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch
@@ -30,6 +30,79 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Configure env
+        run: |
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "SUBARCH=arm64" >> $GITHUB_ENV
+          #clang triplet
+          #echo "CROSS_COMPILE=aarch64-none-linux-gnu-" >> $GITHUB_ENV
+          #gcc triplet
+          #echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          #echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          #echo "CC=ccache clang" >> $GITHUB_ENV
+          #echo "CXX=ccache clang++" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+          echo "CPP=clang-cpp" >> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "NM=llvm-nm" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
+          #echo "LD=ld.mold" >> $GITHUB_ENV
+          echo "STRIP=llvm-strip" >> $GITHUB_ENV
+          echo "OBJCOPY=llvm-objcopy" >> $GITHUB_ENV
+          echo "OBJDUMP=llvm-objdump" >> $GITHUB_ENV
+          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
+          echo "READELF=llvm-readelf" >> $GITHUB_ENV
+          #echo "HOSTCC=ccache clang" >> $GITHUB_ENV
+          #echo "HOSTCXX=ccache clang++" >> $GITHUB_ENV
+          echo "HOSTCC=clang" >> $GITHUB_ENV
+          echo "HOSTCXX=clang++" >> $GITHUB_ENV
+          #echo "CFLAGS=\"-Os -flto=thin\"" >> $GITHUB_ENV
+          #echo "CFLAGS=\"-Os\"" >> $GITHUB_ENV
+          #echo "CXXFLAGS=\"-Os -flto=thin\"" >> $GITHUB_ENV
+          #echo "CXXFLAGS=\"-Os\"" >> $GITHUB_ENV
+          #echo "LDFLAGS=-flto=thin -fuse-ld=lld" >> $GITHUB_ENV
+          #echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
+          #echo "LDFLAGS=\"-flto=thin\"" >> $GITHUB_ENV
+          #echo "LDFLAGS=-fuse-ld=gold" >> $GITHUB_ENV
+          #echo "LTO=thin" >> $GITHUB_ENV
+          echo "LTO=off" >> $GITHUB_ENV
+          echo "LLVM=1" >> $GITHUB_ENV
+          echo "LLVM_IAS=1" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_USER=github" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=actions" >> $GITHUB_ENV
+          echo "LLVM_ENABLE_PROJECTS=clang;polly;lld" >> $GITHUB_ENV
+          #echo "LLVM_ENABLE_PROJECTS=clang;lld" >> $GITHUB_ENV
+          #echo "LLVM_ENABLE_PROJECTS=clang" >> $GITHUB_ENV
+          echo "WITH_POLLY=on" >> $GITHUB_ENV
+          #echo "WITH_POLLY=off" >> $GITHUB_ENV
+          echo "LLVM_USE_LINKER=lld" >> $GITHUB_ENV
+          echo "LLVM_ENABLE_LLD=on" >> $GITHUB_ENV
+          #echo "LLVM_ENABLE_LLD=off" >> $GITHUB_ENV
+          #echo "LLVM_HOST_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
+          #echo "LLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
+          #echo "LLVM_TARGETS_TO_BUILD=aarch64" >> $GITHUB_ENV
+          echo "MYBRANCH=$(git branch --show-current)" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "PATH=\"$PWD/tc/clang/bin:$PATH\" >> $GITHUB_ENV
+          mkdir -v -p rejects
+          mkdir -v -p logs
+          cd logs
+          echo "LOGS_DIR=$PWD" >> $GITHUB_ENV
+
+      - name: Maximize Build Space
+        uses: AdityaGarg8/remove-unwanted-software@v5
+        with:
+          remove-dotnet: 'true'          # Frees ~2 GB
+          remove-android: 'false'         # Frees ~9 GB
+          remove-haskell: 'true'         # Frees ~5.2 GB
+          remove-codeql: 'true'          # Frees ~5.4 GB
+          remove-docker-images: 'true'   # Frees ~3.2 GB
+          remove-large-packages: 'false'  # Frees ~3.1 GB
+          remove-swapfile: 'false'        # Frees ~4 GB
+          remove-cached-tools: 'false'   # Avoid unless confirmed safe
+          verbose: 'false'                # Enable detailed logging
+
       - name: Cleanup runner disk
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
@@ -46,11 +119,29 @@ jobs:
 
       - name: Install deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib \
-            gcc-multilib git gnupg gperf lib32ncurses-dev lib32z1-dev libssl-dev \
-            libxml2 libxml-sax-base-perl libxml-simple-perl lzop unzip xsltproc zip zlib1g-dev
-
+          sudo apt update > /dev/null
+          sudo apt remove -y firefox > /dev/null
+          echo "Apt update and Firefox uninstall completed"
+          sudo apt-mark hold linux-* > /dev/null
+          echo "Apt hold successful"
+          sudo apt upgrade -y > /dev/null
+          echo "Upgrade completed"
+          sudo apt install -y bc bison flex libssl-dev build-essential \
+          libncurses5-dev libncursesw5-dev python3 zstd repo git \
+          git-lfs device-tree-compiler lz4 xz-utils fontconfig lib32z1-dev \
+          zlib1g-dev python-is-python3 p7zip-full android-sdk-libsparse-utils \
+          erofs-utils default-jdk gnupg gperf zip curl libncurses-dev libx11-dev \
+          libreadline-dev libgl1 libgl1-mesa-dev make sudo bc grep tofrodos \
+          python3-markdown libxml2-utils xsltproc libc6-dev libtinfo6 cpio kmod \
+          openssl libelf-dev pahole libarchive-tools rsync ssh git-core \
+          x11proto-core-dev unzip lib32ncurses-dev libssl-dev \
+          libxml2 libxml-sax-base-perl libxml-simple-perl lzop \
+          --fix-missing
+          #sudo apt install -y lld clang-tools llvm-dev --fix-missing
+          #sudo apt install -y binutils-gold --fix-missing
+          #sudo apt install -y mold --fix-missing
+          #sudo apt install -y gcc-aarch64-linux-gnu --fix-missing
+          echo "Apt packages install completed"
       - name: Get toolchains
         run: |
           mkdir -p tc && cd tc
@@ -193,6 +284,121 @@ jobs:
         run: |
           cd kernel
           # 1) SYSVIPC kABI fix (moves sysvsem/sysvshm into ANDROID_KABI slots 6/7/8)
+          curl -sL "$DS_KABI_SYSVIPC" -o ds1.patch
+          patch -p1 --forward < ds1.patch || true
+          # 2) POSIX_MQUEUE kABI fix - upstream patch expects ANDROID_OEM_DATA_ARRAY
+          #    which this tree lacks in user.h, so apply the equivalent inline
+          python3 - << 'PYEOF'
+          import sys
+          p = 'include/linux/sched/user.h'
+          s = open(p).read()
+          if 'ANDROID_KABI_USE(1, unsigned long mq_bytes)' in s:
+              print('[-] user.h already merged')
+          else:
+              a = "\tunsigned long mq_bytes;\t/* How many bytes can be allocated to mqueue? */"
+              b = "\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};"
+              if a not in s: sys.exit('FAIL user.h anchor 1 (upstream drifted)')
+              if b not in s: sys.exit('FAIL user.h anchor 2 (upstream drifted)')
+              s = s.replace(a, "\t/* mq_bytes moved to ANDROID_KABI_USE slot 1 below (kABI-safe) */")
+              s = s.replace(b, "#if defined(CONFIG_POSIX_MQUEUE)\n\tANDROID_KABI_USE(1, unsigned long mq_bytes);\n\tANDROID_KABI_RESERVE(2);\n#else\n\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n#endif\n};")
+              open(p, 'w').write(s)
+              print('[+] user.h mqueue kABI adaptation applied')
+          PYEOF
+          # 3) cgroup file-prefix fix (only if not already handled)
+          if [ -f kernel/cgroup/cgroup.c ] && ! grep -q "kernfs_create_link" kernel/cgroup/cgroup.c; then
+            curl -sL "$DS_CGROUP_FIX" -o ds2.patch
+            patch -p1 --forward < ds2.patch || true
+            echo "[+] cgroup.c prefix fix applied"
+          else
+            echo "[-] cgroup.c already fine, skipped"
+          fi
+          # 4) xt_qtaguid panic fix (only if the file exists; absent on Eclipse)
+          if [ -f net/netfilter/xt_qtaguid.c ]; then
+            curl -sL "$DS_QTAGUID_FIX" -o ds3.patch
+            patch -p1 --forward < ds3.patch || true
+            echo "[+] xt_qtaguid fix applied"
+          else
+            echo "[-] no xt_qtaguid.c, skipped"
+          fi
+          REJ=$(find . -name "*.rej" | wc -l)
+          if [ "$REJ" -gt 0 ]; then
+            echo "DroidSpaces patch .rej files:"
+            find . -name "*.rej" -exec sh -c 'echo "===== $1"; cat "$1"' _ {} \;
+            exit 1
+          fi
+          find . -name "*.orig" -delete
+          echo "[+] DroidSpaces patches clean"
+
+      - name: Integrate NoMount (VFS redirection, no real mounts)
+        run: |
+          cd kernel
+          curl -sSL "$NOMOUNT_SETUP" | bash -
+          test -e fs/nomount/Kconfig || { echo "NoMount integration failed"; exit 1; }
+          echo "[+] NoMount wired into fs/ tree"
+
+      - name: Enable KSU + susfs + DroidSpaces + NoMount configs
+        run: |
+          cd kernel
+          cat >> arch/arm64/configs/$DEFCONFIG << 'CFG'
+          CONFIG_LOCALVERSION="-Eclipse-SusFS"
+          CONFIG_KSU=y
+          CONFIG_KSU_MANUAL_HOOKS=y
+          CONFIG_KSU_SUSFS=y
+          CONFIG_KSU_SUSFS_SUS_PATH=y
+          CONFIG_KSU_SUSFS_SUS_MOUNT=y
+          CONFIG_KSU_SUSFS_SUS_KSTAT=y
+          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
+          CONFIG_KSU_SUSFS_ENABLE_LOG=y
+          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
+          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
+          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
+          CONFIG_KSU_SUSFS_SUS_MAP=y
+          CONFIG_NOMOUNT=y
+          # --- DroidSpaces (containers/VMs) - kABI-safe list per ravindu644 ---
+          CONFIG_SYSVIPC=y
+          CONFIG_POSIX_MQUEUE=y
+          CONFIG_IPC_NS=y
+          CONFIG_PID_NS=y
+          CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
+          CONFIG_USER_NS=y
+          CONFIG_NETFILTER_XT_TARGET_REJECT=y
+          CONFIG_NETFILTER_XT_TARGET_LOG=y
+          CONFIG_NETFILTER_XT_MATCH_RECENT=y
+          CONFIG_IP_SET=y
+          CONFIG_IP_SET_HASH_IP=y
+          CONFIG_IP_SET_HASH_NET=y
+          CONFIG_NETFILTER_XT_SET=y
+          CONFIG_TMPFS_POSIX_ACL=y
+          CONFIG_TMPFS_XATTR=y
+          # --- container networking (NAT/bridge modes) ---
+          CONFIG_NET_NS=y
+          CONFIG_VETH=y
+          CONFIG_BRIDGE=y
+          CONFIG_BRIDGE_NETFILTER=y
+          CONFIG_NF_NAT=y
+          CONFIG_IP_NF_NAT=y
+          CONFIG_IP_NF_TARGET_MASQUERADE=y
+          CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
+          CFG
+          # sus_su/syscall-hook mode instead of manual hooks? replace the
+          # MANUAL_HOOKS line above with: CONFIG_KSU_SUSFS_SUS_SU=y
+          grep -q "THREAD_INFO_IN_TASK" drivers/kernelsu/Kconfig 2>/dev/null && \
+            echo "CONFIG_THREAD_INFO_IN_TASK=y" >> arch/arm64/configs/$DEFCONFIG || true
+
+      - name: Build
+        run: |
+          cd kernel
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD $DEFCONFIG
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD olddefconfig
+          #PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
+          #make -j$(nproc) O=out ARCH=arm64 \
+          #  CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+          #  CROSS_COMPILE=aarch64-linux-android- \
+          #  CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+          #  LD=ld.lld
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD
+          if [ ! -f out/arch/arm64/boot/Image.gz ]; then
+            gzip -c out/arch/arm64/boot/Image > out/arch/arm64/bsvshm into ANDROID_KABI slots 6/7/8)
           curl -sL "$DS_KABI_SYSVIPC" -o ds1.patch
           patch -p1 --forward < ds1.patch || true
           # 2) POSIX_MQUEUE kABI fix - upstream patch expects ANDROID_OEM_DATA_ARRAY
