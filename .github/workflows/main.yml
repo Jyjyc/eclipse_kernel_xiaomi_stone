@@ -24,7 +24,7 @@ env:
   AK3_BRANCH: stone
   # clang proven on SM6375 5.4 (same as veux template); swap for newer if needed
   # CLANG_URL: https://codeload.github.com/LineageOS/android_prebuilts_clang_kernel_linux-x86_clang-r416183b/tar.gz/refs/heads/lineage-20.0
-  CLANG_URL: https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r596125-15682573/clang-r596125.tar.gz
+  # CLANG_URL: https://github.com/bachnxuan/aosp_clang_mirror/releases/download/clang-r596125-15682573/clang-r596125.tar.gz
 
 jobs:
   build:
@@ -65,8 +65,8 @@ jobs:
           #echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
           #echo "LDFLAGS=\"-flto=thin\"" >> $GITHUB_ENV
           #echo "LDFLAGS=-fuse-ld=gold" >> $GITHUB_ENV
-          #echo "LTO=thin" >> $GITHUB_ENV
-          echo "LTO=off" >> $GITHUB_ENV
+          echo "LTO=thin" >> $GITHUB_ENV
+          #echo "LTO=off" >> $GITHUB_ENV
           echo "LLVM=1" >> $GITHUB_ENV
           echo "LLVM_IAS=1" >> $GITHUB_ENV
           echo "KBUILD_BUILD_USER=github" >> $GITHUB_ENV
