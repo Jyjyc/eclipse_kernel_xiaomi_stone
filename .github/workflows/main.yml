@@ -82,9 +82,9 @@ jobs:
           #echo "LLVM_HOST_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
           #echo "LLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
           #echo "LLVM_TARGETS_TO_BUILD=aarch64" >> $GITHUB_ENV
-          echo "MYBRANCH=$(git branch --show-current)" >> $GITHUB_ENV
+          #echo "MYBRANCH=$(git branch --show-current)" >> $GITHUB_ENV
           echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
-          echo "PATH=$PWD/tc/clang/bin:$PATH" >> $GITHUB_ENV
+          #echo "PATH=$PWD/tc/clang/bin:$PATH" >> $GITHUB_ENV
           mkdir -v -p rejects
           mkdir -v -p logs
           cd logs
@@ -137,7 +137,7 @@ jobs:
           x11proto-core-dev unzip lib32ncurses-dev libssl-dev \
           libxml2 libxml-sax-base-perl libxml-simple-perl lzop \
           --fix-missing
-          #sudo apt install -y lld clang-tools llvm-dev --fix-missing
+          sudo apt install -y lld clang-tools llvm-dev --fix-missing
           #sudo apt install -y binutils-gold --fix-missing
           #sudo apt install -y mold --fix-missing
           #sudo apt install -y gcc-aarch64-linux-gnu --fix-missing
@@ -146,7 +146,7 @@ jobs:
       - name: Get toolchains
         run: |
           mkdir -p tc/clang
-          curl -sL "$CLANG_URL" | tar -xz -C tc/clang
+          #curl -sL "$CLANG_URL" | tar -xz -C tc/clang
           #mv android_prebuilts_clang_kernel_linux-x86_clang-r416183b-* clang
           #cd tc
           #git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
@@ -392,6 +392,7 @@ jobs:
           cd kernel
           make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
           LLVM=$LLVM LLVM_IAS=$LLVM_IAS $DEFCONFIG
+          sort -u out/.config --output=out/.config
           make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
           LLVM=$LLVM LLVM_IAS=$LLVM_IAS olddefconfig
           #PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
