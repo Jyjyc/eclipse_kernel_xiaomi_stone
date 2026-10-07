@@ -7,8 +7,8 @@ on:
   #   - cron: "0 4 * * 1"
 
 env:
-  KERNEL_REPO: https://github.com/bittencourtjulival/eclipse_kernel_xiaomi_stone.git
-  KERNEL_BRANCH: seventeen
+  KERNEL_REPO: https://github.com/Jyjyc/eclipse_kernel_xiaomi_stone.git
+  KERNEL_BRANCH: seventeen_mod
   DEFCONFIG: stone_defconfig
   # susfs v2.x patch for kernel 5.4 (JackA1ltman, auto-patches all needed files)
   SUSFS_PATCH: https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch
@@ -30,6 +30,79 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - name: Configure env
+        run: |
+          echo "ARCH=arm64" >> $GITHUB_ENV
+          echo "SUBARCH=arm64" >> $GITHUB_ENV
+          #clang triplet
+          #echo "CROSS_COMPILE=aarch64-none-linux-gnu-" >> $GITHUB_ENV
+          #gcc triplet
+          #echo "CROSS_COMPILE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          #echo "CLANG_TRIPLE=aarch64-linux-gnu-" >> $GITHUB_ENV
+          #echo "CC=ccache clang" >> $GITHUB_ENV
+          #echo "CXX=ccache clang++" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+          echo "CPP=clang-cpp" >> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "NM=llvm-nm" >> $GITHUB_ENV
+          echo "LD=ld.lld" >> $GITHUB_ENV
+          #echo "LD=ld.mold" >> $GITHUB_ENV
+          echo "STRIP=llvm-strip" >> $GITHUB_ENV
+          echo "OBJCOPY=llvm-objcopy" >> $GITHUB_ENV
+          echo "OBJDUMP=llvm-objdump" >> $GITHUB_ENV
+          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
+          echo "READELF=llvm-readelf" >> $GITHUB_ENV
+          #echo "HOSTCC=ccache clang" >> $GITHUB_ENV
+          #echo "HOSTCXX=ccache clang++" >> $GITHUB_ENV
+          echo "HOSTCC=clang" >> $GITHUB_ENV
+          echo "HOSTCXX=clang++" >> $GITHUB_ENV
+          #echo "CFLAGS=\"-Os -flto=thin\"" >> $GITHUB_ENV
+          #echo "CFLAGS=\"-Os\"" >> $GITHUB_ENV
+          #echo "CXXFLAGS=\"-Os -flto=thin\"" >> $GITHUB_ENV
+          #echo "CXXFLAGS=\"-Os\"" >> $GITHUB_ENV
+          #echo "LDFLAGS=-flto=thin -fuse-ld=lld" >> $GITHUB_ENV
+          #echo "LDFLAGS=-fuse-ld=lld" >> $GITHUB_ENV
+          #echo "LDFLAGS=\"-flto=thin\"" >> $GITHUB_ENV
+          #echo "LDFLAGS=-fuse-ld=gold" >> $GITHUB_ENV
+          #echo "LTO=thin" >> $GITHUB_ENV
+          echo "LTO=off" >> $GITHUB_ENV
+          echo "LLVM=1" >> $GITHUB_ENV
+          echo "LLVM_IAS=1" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_USER=github" >> $GITHUB_ENV
+          echo "KBUILD_BUILD_HOST=actions" >> $GITHUB_ENV
+          echo "LLVM_ENABLE_PROJECTS=clang;polly;lld" >> $GITHUB_ENV
+          #echo "LLVM_ENABLE_PROJECTS=clang;lld" >> $GITHUB_ENV
+          #echo "LLVM_ENABLE_PROJECTS=clang" >> $GITHUB_ENV
+          echo "WITH_POLLY=on" >> $GITHUB_ENV
+          #echo "WITH_POLLY=off" >> $GITHUB_ENV
+          echo "LLVM_USE_LINKER=lld" >> $GITHUB_ENV
+          echo "LLVM_ENABLE_LLD=on" >> $GITHUB_ENV
+          #echo "LLVM_ENABLE_LLD=off" >> $GITHUB_ENV
+          #echo "LLVM_HOST_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
+          #echo "LLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-gnu" >> $GITHUB_ENV
+          #echo "LLVM_TARGETS_TO_BUILD=aarch64" >> $GITHUB_ENV
+          echo "MYBRANCH=$(git branch --show-current)" >> $GITHUB_ENV
+          echo "CCACHE_DIR=$HOME/.ccache" >> $GITHUB_ENV
+          echo "PATH=$PWD/tc/clang/bin:$PATH" >> $GITHUB_ENV
+          mkdir -v -p rejects
+          mkdir -v -p logs
+          cd logs
+          echo "LOGS_DIR=$PWD" >> $GITHUB_ENV
+
+      - name: Maximize Build Space
+        uses: AdityaGarg8/remove-unwanted-software@v5
+        with:
+          remove-dotnet: 'true'          # Frees ~2 GB
+          remove-android: 'false'         # Frees ~9 GB
+          remove-haskell: 'true'         # Frees ~5.2 GB
+          remove-codeql: 'true'          # Frees ~5.4 GB
+          remove-docker-images: 'true'   # Frees ~3.2 GB
+          remove-large-packages: 'false'  # Frees ~3.1 GB
+          remove-swapfile: 'false'        # Frees ~4 GB
+          remove-cached-tools: 'false'   # Avoid unless confirmed safe
+          verbose: 'false'                # Enable detailed logging
+
       - name: Cleanup runner disk
         run: |
           sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/lib/android /opt/hostedtoolcache/CodeQL
@@ -46,18 +119,38 @@ jobs:
 
       - name: Install deps
         run: |
-          sudo apt-get update
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib \
-            gcc-multilib git gnupg gperf lib32ncurses-dev lib32z1-dev libssl-dev \
-            libxml2 libxml-sax-base-perl libxml-simple-perl lzop unzip xsltproc zip zlib1g-dev
+          sudo apt update > /dev/null
+          sudo apt remove -y firefox > /dev/null
+          echo "Apt update and Firefox uninstall completed"
+          sudo apt-mark hold linux-* > /dev/null
+          echo "Apt hold successful"
+          sudo apt upgrade -y > /dev/null
+          echo "Upgrade completed"
+          sudo apt install -y bc bison flex libssl-dev build-essential \
+          libncurses5-dev libncursesw5-dev python3 zstd repo git \
+          git-lfs device-tree-compiler lz4 xz-utils fontconfig lib32z1-dev \
+          zlib1g-dev python-is-python3 p7zip-full android-sdk-libsparse-utils \
+          erofs-utils default-jdk gnupg gperf zip curl libncurses-dev libx11-dev \
+          libreadline-dev libgl1 libgl1-mesa-dev make sudo bc grep tofrodos \
+          python3-markdown libxml2-utils xsltproc libc6-dev libtinfo6 cpio kmod \
+          openssl libelf-dev pahole libarchive-tools rsync ssh git-core \
+          x11proto-core-dev unzip lib32ncurses-dev libssl-dev \
+          libxml2 libxml-sax-base-perl libxml-simple-perl lzop \
+          --fix-missing
+          #sudo apt install -y lld clang-tools llvm-dev --fix-missing
+          #sudo apt install -y binutils-gold --fix-missing
+          #sudo apt install -y mold --fix-missing
+          #sudo apt install -y gcc-aarch64-linux-gnu --fix-missing
+          echo "Apt packages install completed"
 
       - name: Get toolchains
         run: |
-          mkdir -p tc && cd tc
-          mkdir clang; cd clang; curl -sL "$CLANG_URL" | tar -xz; cd ..
-          # mv android_prebuilts_clang_kernel_linux-x86_clang-r416183b-* clang
-          git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
-          git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
+          mkdir -p tc/clang
+          curl -sL "$CLANG_URL" | tar -xz -C tc/clang
+          #mv android_prebuilts_clang_kernel_linux-x86_clang-r416183b-* clang
+          #cd tc
+          #git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9 gcc64
+          #git clone --depth=1 -b android12L-release https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/arm/arm-linux-androideabi-4.9 gcc32
 
       - name: Clone kernel source
         run: git clone --depth=1 -b $KERNEL_BRANCH $KERNEL_REPO kernel
@@ -297,17 +390,38 @@ jobs:
       - name: Build
         run: |
           cd kernel
-          make O=out ARCH=arm64 $DEFCONFIG
-          PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
-          make -j$(nproc --all) O=out ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            LD=ld.lld
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
+          LLVM=$LLVM LLVM_IAS=$LLVM_IAS $DEFCONFIG
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
+          LLVM=$LLVM LLVM_IAS=$LLVM_IAS olddefconfig
+          #PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
+          #make -j$(nproc) O=out ARCH=arm64 \
+          #  CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
+          #  CROSS_COMPILE=aarch64-linux-android- \
+          #  CROSS_COMPILE_ARM32=arm-linux-androideabi- \
+          #  LD=ld.lld
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
+          LLVM=$LLVM LLVM_IAS=$LLVM_IAS
           if [ ! -f out/arch/arm64/boot/Image.gz ]; then
             gzip -c out/arch/arm64/boot/Image > out/arch/arm64/boot/Image.gz
           fi
           ls -la out/arch/arm64/boot/Image.gz
+
+      - name: Collect .rej files
+        if: always()
+        continue-on-error: true
+        run: |
+          #find . -name "*.rej" | zip -@ rejects/rejects.zip
+          find . -name "*.rej" -exec cp -v "{}" rejects  \;
+
+      - name: Upload patch rejects
+        if: always()
+        #continue-on-error: true
+        uses: actions/upload-artifact@v6
+        with:
+          name: patch-rejects
+          if-no-files-found: ignore
+          path: rejects/
 
       - name: Package AnyKernel3 zip
         run: |
@@ -318,9 +432,12 @@ jobs:
           zip -r9 "../Eclipse-SusFS-DS-stone-$(date +%Y%m%d).zip" . -x ".git*" "README*" "*.md"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
+        #if-no-files-found: error
         with:
           name: Eclipse-SusFS-DS-NM-stone-${{ github.run_number }}
           path: |
             Eclipse-SusFS-DS-stone-*.zip
-            kernel/out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image*
+            kernel/out/arch/arm64/boot/dts/**/*.dtb
+            kernel/out/arch/arm64/boot/dtbo.img
