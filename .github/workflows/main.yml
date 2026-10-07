@@ -398,122 +398,25 @@ jobs:
           #  LD=ld.lld
           make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD
           if [ ! -f out/arch/arm64/boot/Image.gz ]; then
-            gzip -c out/arch/arm64/boot/Image > out/arch/arm64/bsvshm into ANDROID_KABI slots 6/7/8)
-          curl -sL "$DS_KABI_SYSVIPC" -o ds1.patch
-          patch -p1 --forward < ds1.patch || true
-          # 2) POSIX_MQUEUE kABI fix - upstream patch expects ANDROID_OEM_DATA_ARRAY
-          #    which this tree lacks in user.h, so apply the equivalent inline
-          python3 - << 'PYEOF'
-          import sys
-          p = 'include/linux/sched/user.h'
-          s = open(p).read()
-          if 'ANDROID_KABI_USE(1, unsigned long mq_bytes)' in s:
-              print('[-] user.h already merged')
-          else:
-              a = "\tunsigned long mq_bytes;\t/* How many bytes can be allocated to mqueue? */"
-              b = "\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n};"
-              if a not in s: sys.exit('FAIL user.h anchor 1 (upstream drifted)')
-              if b not in s: sys.exit('FAIL user.h anchor 2 (upstream drifted)')
-              s = s.replace(a, "\t/* mq_bytes moved to ANDROID_KABI_USE slot 1 below (kABI-safe) */")
-              s = s.replace(b, "#if defined(CONFIG_POSIX_MQUEUE)\n\tANDROID_KABI_USE(1, unsigned long mq_bytes);\n\tANDROID_KABI_RESERVE(2);\n#else\n\tANDROID_KABI_RESERVE(1);\n\tANDROID_KABI_RESERVE(2);\n#endif\n};")
-              open(p, 'w').write(s)
-              print('[+] user.h mqueue kABI adaptation applied')
-          PYEOF
-          # 3) cgroup file-prefix fix (only if not already handled)
-          if [ -f kernel/cgroup/cgroup.c ] && ! grep -q "kernfs_create_link" kernel/cgroup/cgroup.c; then
-            curl -sL "$DS_CGROUP_FIX" -o ds2.patch
-            patch -p1 --forward < ds2.patch || true
-            echo "[+] cgroup.c prefix fix applied"
-          else
-            echo "[-] cgroup.c already fine, skipped"
-          fi
-          # 4) xt_qtaguid panic fix (only if the file exists; absent on Eclipse)
-          if [ -f net/netfilter/xt_qtaguid.c ]; then
-            curl -sL "$DS_QTAGUID_FIX" -o ds3.patch
-            patch -p1 --forward < ds3.patch || true
-            echo "[+] xt_qtaguid fix applied"
-          else
-            echo "[-] no xt_qtaguid.c, skipped"
-          fi
-          REJ=$(find . -name "*.rej" | wc -l)
-          if [ "$REJ" -gt 0 ]; then
-            echo "DroidSpaces patch .rej files:"
-            find . -name "*.rej" -exec sh -c 'echo "===== $1"; cat "$1"' _ {} \;
-            exit 1
-          fi
-          find . -name "*.orig" -delete
-          echo "[+] DroidSpaces patches clean"
-
-      - name: Integrate NoMount (VFS redirection, no real mounts)
-        run: |
-          cd kernel
-          curl -sSL "$NOMOUNT_SETUP" | bash -
-          test -e fs/nomount/Kconfig || { echo "NoMount integration failed"; exit 1; }
-          echo "[+] NoMount wired into fs/ tree"
-
-      - name: Enable KSU + susfs + DroidSpaces + NoMount configs
-        run: |
-          cd kernel
-          cat >> arch/arm64/configs/$DEFCONFIG << 'CFG'
-          CONFIG_LOCALVERSION="-Eclipse-SusFS"
-          CONFIG_KSU=y
-          CONFIG_KSU_MANUAL_HOOKS=y
-          CONFIG_KSU_SUSFS=y
-          CONFIG_KSU_SUSFS_SUS_PATH=y
-          CONFIG_KSU_SUSFS_SUS_MOUNT=y
-          CONFIG_KSU_SUSFS_SUS_KSTAT=y
-          CONFIG_KSU_SUSFS_SPOOF_UNAME=y
-          CONFIG_KSU_SUSFS_ENABLE_LOG=y
-          CONFIG_KSU_SUSFS_HIDE_KSU_SUSFS_SYMBOLS=y
-          CONFIG_KSU_SUSFS_SPOOF_CMDLINE_OR_BOOTCONFIG=y
-          CONFIG_KSU_SUSFS_OPEN_REDIRECT=y
-          CONFIG_KSU_SUSFS_SUS_MAP=y
-          CONFIG_NOMOUNT=y
-          # --- DroidSpaces (containers/VMs) - kABI-safe list per ravindu644 ---
-          CONFIG_SYSVIPC=y
-          CONFIG_POSIX_MQUEUE=y
-          CONFIG_IPC_NS=y
-          CONFIG_PID_NS=y
-          CONFIG_NETFILTER_XT_MATCH_ADDRTYPE=y
-          CONFIG_USER_NS=y
-          CONFIG_NETFILTER_XT_TARGET_REJECT=y
-          CONFIG_NETFILTER_XT_TARGET_LOG=y
-          CONFIG_NETFILTER_XT_MATCH_RECENT=y
-          CONFIG_IP_SET=y
-          CONFIG_IP_SET_HASH_IP=y
-          CONFIG_IP_SET_HASH_NET=y
-          CONFIG_NETFILTER_XT_SET=y
-          CONFIG_TMPFS_POSIX_ACL=y
-          CONFIG_TMPFS_XATTR=y
-          # --- container networking (NAT/bridge modes) ---
-          CONFIG_NET_NS=y
-          CONFIG_VETH=y
-          CONFIG_BRIDGE=y
-          CONFIG_BRIDGE_NETFILTER=y
-          CONFIG_NF_NAT=y
-          CONFIG_IP_NF_NAT=y
-          CONFIG_IP_NF_TARGET_MASQUERADE=y
-          CONFIG_NETFILTER_XT_TARGET_MASQUERADE=y
-          CFG
-          # sus_su/syscall-hook mode instead of manual hooks? replace the
-          # MANUAL_HOOKS line above with: CONFIG_KSU_SUSFS_SUS_SU=y
-          grep -q "THREAD_INFO_IN_TASK" drivers/kernelsu/Kconfig 2>/dev/null && \
-            echo "CONFIG_THREAD_INFO_IN_TASK=y" >> arch/arm64/configs/$DEFCONFIG || true
-
-      - name: Build
-        run: |
-          cd kernel
-          make O=out ARCH=arm64 $DEFCONFIG
-          PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
-          make -j$(nproc --all) O=out ARCH=arm64 \
-            CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
-            CROSS_COMPILE=aarch64-linux-android- \
-            CROSS_COMPILE_ARM32=arm-linux-androideabi- \
-            LD=ld.lld
-          if [ ! -f out/arch/arm64/boot/Image.gz ]; then
             gzip -c out/arch/arm64/boot/Image > out/arch/arm64/boot/Image.gz
           fi
           ls -la out/arch/arm64/boot/Image.gz
+
+      - name: Collect .rej files
+        if: always()
+        continue-on-error: true
+        run: |
+          #find . -name "*.rej" | zip -@ rejects/rejects.zip
+          find . -name "*.rej" -exec cp -v "{}" rejects  \;
+
+      - name: Upload patch rejects
+        if: always()
+        #continue-on-error: true
+        uses: actions/upload-artifact@v6
+        with:
+          name: patch-rejects
+          if-no-files-found: ignore
+          path: rejects/
 
       - name: Package AnyKernel3 zip
         run: |
@@ -524,9 +427,12 @@ jobs:
           zip -r9 "../Eclipse-SusFS-DS-stone-$(date +%Y%m%d).zip" . -x ".git*" "README*" "*.md"
 
       - name: Upload artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
+        #if-no-files-found: error
         with:
           name: Eclipse-SusFS-DS-NM-stone-${{ github.run_number }}
           path: |
             Eclipse-SusFS-DS-stone-*.zip
-            kernel/out/arch/arm64/boot/Image.gz
+            out/arch/arm64/boot/Image*
+            kernel/out/arch/arm64/boot/dts/**/*.dtb
+            kernel/out/arch/arm64/boot/dtbo.img
