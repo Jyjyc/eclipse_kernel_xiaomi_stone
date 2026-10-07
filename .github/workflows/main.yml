@@ -388,15 +388,18 @@ jobs:
       - name: Build
         run: |
           cd kernel
-          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD $DEFCONFIG
-          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD olddefconfig
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
+          LLVM=$LLVM LLVM_IAS=$LLVM_IAS $DEFCONFIG
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
+          LLVM=$LLVM LLVM_IAS=$LLVM_IAS olddefconfig
           #PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
           #make -j$(nproc) O=out ARCH=arm64 \
           #  CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
           #  CROSS_COMPILE=aarch64-linux-android- \
           #  CROSS_COMPILE_ARM32=arm-linux-androideabi- \
           #  LD=ld.lld
-          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD
+          make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
+          LLVM=$LLVM LLVM_IAS=$LLVM_IAS
           if [ ! -f out/arch/arm64/boot/Image.gz ]; then
             gzip -c out/arch/arm64/boot/Image > out/arch/arm64/boot/Image.gz
           fi
