@@ -159,7 +159,7 @@ jobs:
       - name: Inject ReSukiSU driver
         run: |
           cd kernel
-          curl -sSL "$KSU_SETUP" | bash -s --
+          curl -sSL "$KSU_SETUP" | bash -s -- builtin
 
       - name: Apply susfs patch (v2.x for 5.4)
         run: |
