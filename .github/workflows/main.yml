@@ -145,6 +145,7 @@ jobs:
           echo "Apt packages install completed"
 
       - name: Get toolchains
+        if: false
         run: |
           mkdir -p tc/clang
           #curl -sL "$CLANG_URL" | tar -xz -C tc/clang
@@ -162,6 +163,7 @@ jobs:
           curl -sSL "$KSU_SETUP" | bash -s -- builtin
 
       - name: Apply susfs patch (v2.x for 5.4)
+        if: false
         run: |
           cd kernel
           curl -sL "$SUSFS_PATCH" -o susfs.patch
@@ -169,6 +171,7 @@ jobs:
           echo "[+] susfs patch applied (2 known rejects on Eclipse tree get fixed next)"
 
       - name: Fix susfs rejects (Eclipse-specific merges, tested vs seventeen@5.4.303)
+        if: false
         run: |
           cd kernel
           python3 - << 'PYEOF'
@@ -391,11 +394,13 @@ jobs:
       - name: Build
         run: |
           cd kernel
+          sort -u arch/arm64/configs/$DEFCONFIG --output=arch/arm64/configs/$DEFCONFIG
           make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
           LLVM=$LLVM LLVM_IAS=$LLVM_IAS $DEFCONFIG
           sort -u out/.config --output=out/.config
           make -j$(nproc) O=out ARCH=$ARCH CC=$CC LD=$LD \
           LLVM=$LLVM LLVM_IAS=$LLVM_IAS olddefconfig
+          sort -u out/.config --output=out/.config
           #PATH="$PWD/../tc/clang/bin:$PWD/../tc/gcc64/bin:$PWD/../tc/gcc32/bin:$PATH" \
           #make -j$(nproc) O=out ARCH=arm64 \
           #  CC=clang CLANG_TRIPLE=aarch64-linux-gnu- \
