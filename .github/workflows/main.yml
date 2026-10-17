@@ -12,9 +12,10 @@ env:
   DEFCONFIG: stone_defconfig
   # susfs v2.x patch for kernel 5.4 (JackA1ltman, auto-patches all needed files)
   SUSFS_PATCH: https://raw.githubusercontent.com/JackA1ltman/NonGKI_Kernel_Build_2nd/mainline/Patches/Patch/susfs_patch_to_5.4.patch
-  # ReSukiSU driver injector (no args = latest tagged release)
+  # KSU driver injector (no args = latest tagged release)
   # KSU_SETUP: https://raw.githubusercontent.com/rsuntk/KernelSU/main/kernel/setup.sh
-  KSU_SETUP: https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/builtin/kernel/setup.sh
+  # KSU_SETUP: https://raw.githubusercontent.com/SukiSU-Ultra/SukiSU-Ultra/refs/heads/builtin/kernel/setup.sh
+  KSU_SETUP: https://raw.githubusercontent.com/Baka-SU/BakaSU/refs/heads/main/kernel/setup.sh
   # DroidSpaces-OSS (ravindu644) - containers/VMs. 5.4 = GKI category -> kABI patches MANDATORY
   DS_KABI_SYSVIPC: https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/GKI/below-kernel-6.12/001.GKI-below-6.12-fix_sysvipc_kabi_6_7_8.patch
   DS_CGROUP_FIX: https://raw.githubusercontent.com/ravindu644/Droidspaces-OSS/main/Documentation/resources/kernel-patches/non-GKI/02.fix_restore%20cgroup%20file%20prefix%20handling%20.patch
