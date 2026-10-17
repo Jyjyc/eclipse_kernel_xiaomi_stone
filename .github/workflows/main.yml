@@ -161,7 +161,7 @@ jobs:
           echo "KERNEL_ROOT=$PWD" >> $GITHUB_ENV
           
 
-      - name: Inject ReSukiSU driver
+      - name: Inject KSU driver
         run: |
           cd kernel
           curl -sSL "$KSU_SETUP" | bash -s --
