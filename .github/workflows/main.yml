@@ -164,9 +164,10 @@ jobs:
       - name: Inject ReSukiSU driver
         run: |
           cd kernel
-          curl -sSL "$KSU_SETUP" | bash -s -- builtin
+          curl -sSL "$KSU_SETUP" | bash -s --
 
       - name: Download susfs sources
+        if: false
         run: |
           git clone --branch gki-android12-5.10 --single-branch https://gitlab.com/simonpunk/susfs4ksu.git susfs
           cd susfs/kernel_patches
