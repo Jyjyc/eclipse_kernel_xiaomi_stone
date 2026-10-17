@@ -167,7 +167,7 @@ jobs:
           curl -sSL "$KSU_SETUP" | bash -s --
 
       - name: Download susfs sources
-        if: false
+        #if: false
         run: |
           git clone --branch gki-android12-5.10 --single-branch https://gitlab.com/simonpunk/susfs4ksu.git susfs
           cd susfs/kernel_patches
@@ -175,7 +175,7 @@ jobs:
           cp -v ./include/linux/* $KERNEL_ROOT/include/linux/
 
       - name: Apply susfs patch (v2.x for 5.4)
-        if: false
+        #if: false
         run: |
           cd kernel
           curl -sL "$SUSFS_PATCH" -o susfs.patch
@@ -190,7 +190,7 @@ jobs:
           find . -name "*.rej" -exec cp -v "{}" rejects  \;
 
       - name: Fix susfs rejects (Eclipse-specific merges, tested vs seventeen@5.4.303)
-        if: false
+        #if: false
         run: |
           cd kernel
           python3 - << 'PYEOF'
